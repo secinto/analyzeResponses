@@ -45,11 +45,18 @@ This will display help for the tool. Here are all the switches it supports.
 
 
 ```console
+analyze the responses obtained and stored by HTTPx for interesting data
+
 Usage:
   ./analyzeResponses [flags]
 
 Flags:
-   -f,                   input file containing the data to be stored in elastic/logstash
-   -i                    the index under which the content should be stored
-   -p                    project name which will be added as additional information to the data
-   -h                    host name which will be added as additional information to the data
+INPUT:
+   -p, -project string  project name for metadata addition
+
+DEBUG:
+   -silent         show only results in output
+   -version        show version of the project
+   -v              show verbose output
+   -nc, -no-color  disable colors in output
+
