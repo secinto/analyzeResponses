@@ -1,9 +1,9 @@
 package analyze
 
-const VERSION = "0.1"
+const VERSION = "0.2.1"
 
 type Config struct {
-	S2SPath string `yaml:"s2s_path,omitempty"`
+	ProjectsPath string `yaml:"projects_path,omitempty"`
 }
 
 type Analyzer struct {
