@@ -122,9 +122,9 @@ func (p *Analyzer) analyseFileContent(file string, d fs.DirEntry, err error) err
 				}
 
 				if lastLine != "" {
-					input, error := url.Parse(lastLine)
+					input, err := url.Parse(lastLine)
 
-					if error != nil {
+					if err != nil {
 						log.Infof("Couldn't parse input as URL: %s", lastLine)
 					} else {
 						responseInfo.Host = input.Hostname()
@@ -175,23 +175,32 @@ func (p *Analyzer) analyseFileContent(file string, d fs.DirEntry, err error) err
 func analyzeHeaders(content string, info *ResponseInfos) {
 	var nonStandardHeaders []string
 	var interestingHeaders []string
+	var statusCodes []string
+	var locations []string
+	var httpMethods []string
+	var hosts []string
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	var serverHeaders = false
+	var clientHeaders = false
 	for scanner.Scan() {
 
 		line := scanner.Text()
-		if strings.HasPrefix(line, "HTTP") {
+		if strings.HasPrefix(line, "HTTP/") {
 			serverHeaders = true
+		} else if strings.Contains(line, "HTTP/") {
+			clientHeaders = true
 		}
 		if line == "" {
 			serverHeaders = false
+			clientHeaders = false
 		}
 		if serverHeaders {
+
 			if strings.Contains(line, ":") {
 				parts := strings.Split(line, ":")
 				if len(parts) > 0 {
 					if !slices.Contains(commonHeaders, parts[0]) {
-						nonStandardHeaders = AppendIfMissing(nonStandardHeaders, line)
+						nonStandardHeaders = AppendIfMissing(nonStandardHeaders, strings.TrimSpace(line))
 					}
 					if slices.Contains(extractHeaders, parts[0]) {
 						interestingHeaders = AppendIfMissing(interestingHeaders, line)
@@ -205,16 +214,48 @@ func analyzeHeaders(content string, info *ResponseInfos) {
 						}
 					}
 				}
+			} else {
+				parts := strings.Split(line, " ")
+				statusCodes = append(statusCodes, strings.TrimSpace(parts[1]))
+			}
+		} else if clientHeaders {
+			if strings.Contains(line, ":") {
+				parts := strings.Split(line, ":")
+				if len(parts) > 0 {
+					if parts[0] == "Host" {
+						hosts = append(hosts, strings.TrimSpace(parts[1]))
+					}
+				}
+			} else {
+				parts := strings.Split(line, " ")
+				locations = append(locations, strings.TrimSpace(parts[1]))
+				httpMethods = append(httpMethods, strings.TrimSpace(parts[0]))
 			}
 		}
 	}
 	if len(nonStandardHeaders) > 0 {
-		log.Infof("Server at URL %s responded with non standard headers: %s", info.Url, nonStandardHeaders)
+		log.Debugf("Server at URL %s responded with non standard headers: %s", info.Url, nonStandardHeaders)
 		info.NonStandardHeaders = nonStandardHeaders
 	}
 	if len(interestingHeaders) > 0 {
-		log.Infof("Server at URL %s responded with interesting headers: %s", info.Url, interestingHeaders)
+		log.Debugf("Server at URL %s responded with interesting headers: %s", info.Url, interestingHeaders)
 		info.InterestingHeaders = interestingHeaders
+	}
+	if len(statusCodes) > 0 {
+		log.Debugf("Server at URL %s responded with following status codes: %s", info.Url, statusCodes)
+		info.StatusCodes = statusCodes
+	}
+	if len(locations) > 0 {
+		log.Debugf("Server at URL %s was requested with following locations: %s", info.Url, locations)
+		info.Locations = locations
+	}
+	if len(httpMethods) > 0 {
+		log.Debugf("Server at URL %s was requested with following HTTP methods: %s", info.Url, httpMethods)
+		info.HttpMethods = httpMethods
+	}
+	if len(hosts) > 0 {
+		log.Debugf("Server at URL %s was requested with following host headers: %s", info.Url, hosts)
+		info.Hosts = hosts
 	}
 }
 

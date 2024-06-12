@@ -1,6 +1,6 @@
 package analyze
 
-const VERSION = "0.2.1"
+const VERSION = "0.2.2"
 
 type Config struct {
 	ProjectsPath string `yaml:"projects_path,omitempty"`
@@ -18,4 +18,8 @@ type ResponseInfos struct {
 	Year               string
 	InterestingHeaders []string
 	NonStandardHeaders []string
+	Locations          []string
+	HttpMethods        []string
+	StatusCodes        []string
+	Hosts              []string
 }
