@@ -2,26 +2,31 @@ module github.com/secinto/analyzeResponses
 
 go 1.22
 
-toolchain go1.22.3
+replace secinto/checkfix_utils => ../checkfix_utils
 
 require (
 	github.com/mattn/go-colorable v0.1.13
 	github.com/pkg/errors v0.9.1
-	github.com/projectdiscovery/goflags v0.1.55
-	github.com/projectdiscovery/gologger v1.1.12
-	github.com/projectdiscovery/utils v0.1.3
+	github.com/projectdiscovery/goflags v0.1.61
+	github.com/projectdiscovery/gologger v1.1.15
+	github.com/projectdiscovery/utils v0.2.2
 	github.com/sirupsen/logrus v1.9.3
 	github.com/snowzach/rotatefilehook v0.0.0-20220211133110-53752135082d
 	golang.org/x/exp v0.0.0-20240604190554-fc45aab8b7f8
 	gopkg.in/yaml.v3 v3.0.1
+	secinto/checkfix_utils v0.1.2
 )
 
 require (
 	github.com/andybalholm/brotli v1.1.0 // indirect
+	github.com/antchfx/jsonquery v1.3.5 // indirect
+	github.com/antchfx/xmlquery v1.4.1 // indirect
+	github.com/antchfx/xpath v1.3.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/cnf/structhash v0.0.0-20201127153200-e1b16c1ebc08 // indirect
 	github.com/dsnet/compress v0.0.2-0.20210315054119-f66993602bf5 // indirect
+	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
@@ -48,6 +53,7 @@ require (
 	golang.org/x/net v0.26.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
 	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/tools v0.22.0 // indirect
 	gopkg.in/djherbis/times.v1 v1.3.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect

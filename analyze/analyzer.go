@@ -1,21 +1,19 @@
 package analyze
 
 import (
-	"bufio"
 	"encoding/json"
-	"fmt"
 	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	utils "secinto/checkfix_utils"
 	"strings"
 )
 
 var (
-	log           = NewLogger()
+	log           = utils.NewLogger()
 	appConfig     Config
 	commonHeaders = []string{"Host", "Server", "Last-Modified", "Content-Length", "Content-Type", "User-Agent",
 		"Cache-Control", "Connection", "Date", "Pragma", "Strict-Transport-Security", "Expires", "X-Content-Type-Options",
@@ -86,127 +84,81 @@ func loadConfigFrom(location string) Config {
 func (p *Analyzer) Analyze() error {
 	log.Infof("Getting findings for project %s", p.options.Project)
 	if p.options.Project != "" {
-		filepath.WalkDir(p.options.BaseFolder+"/responses/domains/response", p.analyseFileContent)
+
+		err := filepath.WalkDir(p.options.BaseFolder+"/responses/domains/response", p.parseResponseFile)
+		if err != nil {
+			return err
+		}
 		responseInfo, _ := json.MarshalIndent(p.responseInfos, "", " ")
-		WriteToFileInProject(p.options.BaseFolder+"findings/responseInfos.json", string(responseInfo))
+		utils.WriteToFile(p.options.BaseFolder+"findings/responseInfos.json", string(responseInfo))
 	} else {
 		log.Fatal("Project must be specified")
 	}
 	return nil
 }
 
-func (p *Analyzer) analyseFileContent(file string, d fs.DirEntry, err error) error {
+func (p *Analyzer) parseResponseFile(file string, d fs.DirEntry, err error) error {
 	if !strings.HasSuffix(file, "index.txt") && strings.HasSuffix(file, ".txt") {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() {
 			log.Infof("Analyzing file %s", file)
-			content := readFileToString(file)
+			//content := utils.ReadFileToString(file)
+			responseFile := utils.ParseResponseFile(file)
+			log.Debugf("Response file for host %s", responseFile.Host)
 
-			if len(content) > 0 {
-				var lastLine string
-				lastIndex := strings.LastIndex(content, "\n")
-				if lastIndex >= len(content)-1 {
-					lastIndex = lastIndexAt(content, "\n", lastIndex-100)
-				}
-
-				if lastIndex >= len(content)-1 {
-					lastLine = ""
-				} else {
-					lastLine = content[lastIndex+1:]
-				}
-
-				responseInfo := ResponseInfos{
-					Url: lastLine,
-				}
-
-				if lastLine != "" {
-					input, err := url.Parse(lastLine)
-
-					if err != nil {
-						log.Infof("Couldn't parse input as URL: %s", lastLine)
-					} else {
-						responseInfo.Host = input.Hostname()
-						if input.Port() == "" {
-							if input.Scheme == "http" {
-								//Assume that it is 80 since it is HTTP
-								responseInfo.Port = "80"
-							} else if input.Scheme == "https" {
-								//Assume that it is 443 since it is HTTPS
-								responseInfo.Port = "443"
-							} else {
-								log.Errorf("Protocol not handled: %s", input.Scheme)
-							}
-
-						} else {
-							responseInfo.Port = input.Port()
-						}
-					}
-				} else {
-					log.Errorf("No request URL info found %s", file)
-				}
-
-				foundDate := findCopyrightDate(content, file)
-
-				if foundDate != "" {
-					log.Debugf("Text around found index %s", foundDate)
-					r := regexp.MustCompile("(19|20)\\d{2}")
-					matches := r.FindAllString(foundDate, -1)
-					if matches != nil {
-						responseInfo.Year = matches[len(matches)-1]
-						log.Infof("Last modified year %s set for %s", responseInfo.Year, responseInfo.Url)
-					} else {
-						log.Debugf("Content didn't contain a year. %s", foundDate)
-					}
-				} else {
-					log.Debugf("No copyright info for %s", file)
-				}
-
-				analyzeHeaders(content, &responseInfo)
-
-				p.responseInfos = append(p.responseInfos, responseInfo)
+			responseInfo := ResponseInfos{
+				Url:  responseFile.URL,
+				Host: responseFile.Host,
+				Port: responseFile.Port,
 			}
+
+			content := responseFile.Responses[len(responseFile.Responses)-1].Body
+
+			foundDate := findCopyrightDate(content, file)
+			if foundDate != "" {
+				log.Debugf("Text around found index %s", foundDate)
+				r := regexp.MustCompile("(19|20)\\d{2}")
+				matches := r.FindAllString(foundDate, -1)
+				if matches != nil {
+					responseInfo.Year = matches[len(matches)-1]
+					log.Infof("Last modified year %s set for %s", responseInfo.Year, responseInfo.Url)
+				} else {
+					log.Debugf("Content didn't contain a year. %s", foundDate)
+				}
+			} else {
+				log.Debugf("No copyright info for %s", file)
+			}
+
+			analyzeResponseFileHeaders(responseFile, &responseInfo)
+			p.responseInfos = append(p.responseInfos, responseInfo)
+
 		}
 	}
 	return nil
 }
 
-func analyzeHeaders(content string, info *ResponseInfos) {
+func analyzeResponseFileHeaders(responseFile utils.ResponseFile, info *ResponseInfos) {
 	var nonStandardHeaders []string
 	var interestingHeaders []string
 	var statusCodes []string
 	var locations []string
 	var httpMethods []string
 	var hosts []string
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	var serverHeaders = false
-	var clientHeaders = false
-	for scanner.Scan() {
-
-		line := scanner.Text()
-		if strings.HasPrefix(line, "HTTP/") {
-			serverHeaders = true
-		} else if strings.Contains(line, "HTTP/") {
-			clientHeaders = true
-		}
-		if line == "" {
-			serverHeaders = false
-			clientHeaders = false
-		}
-		if serverHeaders {
-
-			if strings.Contains(line, ":") {
-				parts := strings.Split(line, ":")
+	for _, responses := range responseFile.Responses {
+		for _, header := range responses.Headers {
+			if strings.Contains(header, ":") {
+				parts := strings.Split(header, ":")
 				if len(parts) > 0 {
 					if !slices.Contains(commonHeaders, parts[0]) {
-						nonStandardHeaders = AppendIfMissing(nonStandardHeaders, strings.TrimSpace(line))
+						nonStandardHeaders = utils.AppendIfMissing(nonStandardHeaders, strings.TrimSpace(header))
 					}
 					if slices.Contains(extractHeaders, parts[0]) {
-						interestingHeaders = AppendIfMissing(interestingHeaders, line)
-						if strings.HasPrefix(line, "Last-Modified") && info.Year == "" {
+						interestingHeaders = utils.AppendIfMissing(interestingHeaders, header)
+						if strings.HasPrefix(header, "Last-Modified") && info.Year == "" {
 							r := regexp.MustCompile("(19|20)\\d{2}")
-							matches := r.FindAllString(line, -1)
+							matches := r.FindAllString(header, -1)
 							if matches != nil {
 								info.Year = matches[len(matches)-1]
 								log.Infof("Last modified year %s set for %s", info.Year, info.Url)
@@ -214,25 +166,17 @@ func analyzeHeaders(content string, info *ResponseInfos) {
 						}
 					}
 				}
-			} else {
-				parts := strings.Split(line, " ")
-				statusCodes = append(statusCodes, strings.TrimSpace(parts[1]))
-			}
-		} else if clientHeaders {
-			if strings.Contains(line, ":") {
-				parts := strings.Split(line, ":")
-				if len(parts) > 0 {
-					if parts[0] == "Host" {
-						hosts = append(hosts, strings.TrimSpace(parts[1]))
-					}
-				}
-			} else {
-				parts := strings.Split(line, " ")
-				locations = append(locations, strings.TrimSpace(parts[1]))
-				httpMethods = append(httpMethods, strings.TrimSpace(parts[0]))
 			}
 		}
+		statusCodes = append(statusCodes, strings.TrimSpace(responses.StatusCode))
 	}
+
+	for _, requests := range responseFile.Requests {
+		hosts = append(hosts, strings.TrimSpace(requests.Host))
+		locations = append(locations, strings.TrimSpace(requests.Path))
+		httpMethods = append(httpMethods, strings.TrimSpace(requests.Method))
+	}
+
 	if len(nonStandardHeaders) > 0 {
 		log.Debugf("Server at URL %s responded with non standard headers: %s", info.Url, nonStandardHeaders)
 		info.NonStandardHeaders = nonStandardHeaders
@@ -263,40 +207,46 @@ func findCopyrightDate(content string, file string) string {
 	var found = ""
 	// Regex to check for a year between 1999-2099
 	//r := regexp.MustCompile("(19|20)\\d{2}")
-
+	var start int
 	if index := strings.LastIndex(content, "©"); index > 0 {
 		log.Debugf("Found copyright sign at index %d of file %s", index, file)
-		if len(content) < index+101 {
-			found = content[index-20 : len(content)-1]
+		if index > 20 {
+			start = index - 20
 		} else {
-			found = content[index-20 : index+100]
+			start = 0
+		}
+		if len(content) < index+100 {
+			found = content[start : len(content)-1]
+		} else {
+			found = content[start : index+100]
 		}
 	}
 	if index := strings.LastIndex(content, "Copyright"); index > 0 {
 		log.Debugf("Found copyright text at index %d of file %s", index, file)
-		if len(content) < index+100 {
-			found = content[index-20 : len(content)-1]
+		if index > 20 {
+			start = index - 20
 		} else {
-			found = content[index-20 : index+100]
+			start = 0
+		}
+		if len(content) < index+100 {
+			found = content[start : len(content)-1]
+		} else {
+			found = content[start : index+100]
 		}
 	}
 	if index := strings.LastIndex(content, "&copy;"); index > 0 {
 		log.Debugf("Found &copy; text at index %d of file %s", index, file)
-		if len(content) < index+100 {
-			found = content[index-20 : len(content)-1]
+		if index > 20 {
+			start = index - 20
 		} else {
-			found = content[index-20 : index+100]
+			start = 0
+		}
+
+		if len(content) < index+100 {
+			found = content[start : len(content)-1]
+		} else {
+			found = content[start : index+100]
 		}
 	}
 	return found
-}
-
-func readFileToString(filename string) string {
-	b, err := os.ReadFile(filename) // just pass the file name
-	if err != nil {
-		fmt.Print(err)
-	}
-
-	str := string(b) // convert content to a 'string'
-	return str
 }
